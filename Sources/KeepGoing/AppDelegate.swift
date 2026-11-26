@@ -5,6 +5,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem!
   private var busy = false
+  private var hotKey: HotKey?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -14,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
     refresh()
+
+    let hotKey = HotKey { [weak self] in self?.toggle() }
+    if hotKey.register() {
+      self.hotKey = hotKey
+    } else {
+      NSLog("KeepGoing: 단축키를 등록하지 못했습니다 (다른 앱이 사용 중)")
+    }
   }
 
   // MARK: - Status item
@@ -55,9 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = disabled == nil ? "상태 알 수 없음" : (disabled == true ? "켜짐" : "꺼짐")
     menu.addItem(withTitle: "잠자기 방지: \(state)", action: nil, keyEquivalent: "")
     menu.addItem(.separator())
-    menu.addItem(
+    let toggleItem = menu.addItem(
       withTitle: disabled == true ? "끄기" : "켜기", action: #selector(toggle),
-      keyEquivalent: "")
+      keyEquivalent: hotKey == nil ? "" : HotKey.keyEquivalent)
+    toggleItem.keyEquivalentModifierMask = HotKey.modifierMask
     menu.addItem(withTitle: "제거…", action: #selector(uninstall), keyEquivalent: "")
     menu.addItem(.separator())
     menu.addItem(
