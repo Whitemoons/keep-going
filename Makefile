@@ -49,7 +49,10 @@ $(DMGBUILD): Scripts/requirements.txt
 dmg: app $(DMGBUILD)
 	rm -f "$(DMG)"
 	mkdir -p dist
-	$(DMGBUILD) -s Scripts/dmg-settings.py -D app="$(APP)" "$(APP_NAME)" "$(DMG)"
+	rm -rf build/dmg && mkdir -p build/dmg
+	swift Scripts/make-alias/main.swift build/dmg/Applications
+	$(DMGBUILD) -s Scripts/dmg-settings.py -D app="$(APP)" \
+		-D applications=build/dmg/Applications "$(APP_NAME)" "$(DMG)"
 	codesign --force --sign "$(SIGN_ID)" "$(DMG)"
 
 # Needs SIGN_ID set to a Developer ID Application identity.

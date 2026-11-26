@@ -5,9 +5,11 @@ import os.path
 
 app = defines["app"]  # noqa: F821 - injected by dmgbuild (-D app=...)
 
+# A Finder alias with the folder icon embedded (see Scripts/make-alias), not a symlink.
+applications = defines["applications"]  # noqa: F821
+
 format = "UDZO"
-files = [app]
-symlinks = {"Applications": "/Applications"}
+files = [app, applications]
 
 background = "Resources/dmg-background.tiff"
 window_rect = ((200, 200), (600, 400))
@@ -23,5 +25,5 @@ icon_size = 112
 text_size = 13
 icon_locations = {
     os.path.basename(app): (160, 185),
-    "Applications": (440, 185),
+    os.path.basename(applications): (440, 185),
 }
