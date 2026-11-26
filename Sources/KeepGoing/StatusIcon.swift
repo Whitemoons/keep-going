@@ -15,7 +15,7 @@ final class StatusIcon {
   private var twitchTimer: Timer?
   private var pending: [DispatchWorkItem] = []
 
-  init(button: NSStatusBarButton, twitchInterval: TimeInterval = 10) {
+  init(button: NSStatusBarButton, twitchInterval: TimeInterval = 3) {
     self.button = button
     self.twitchInterval = twitchInterval
   }
