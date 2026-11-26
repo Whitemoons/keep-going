@@ -23,7 +23,10 @@ macOS 13 이상, Apple Silicon/Intel 유니버설.
 make app                 # build/Keep Going.app
 make dmg                 # dist/KeepGoing.dmg
 make lint
+make assets              # 아이콘·DMG 배경 다시 생성 (모양을 바꿨을 때만)
 ```
+
+`make dmg`는 DMG 창 배치를 위해 `dmgbuild`(MIT)를 `.venv`에 설치한다. Python 3가 필요하다.
 
 서명 인증서는 `SIGN_ID`로 바꾼다 (기본값 `Apple Development`). 헬퍼는 팀 ID가 있는
 서명이 필요해서 ad-hoc 서명(`-`)으로는 동작하지 않는다.

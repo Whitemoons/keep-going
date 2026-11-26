@@ -10,6 +10,7 @@ ARCHS := --arch arm64 --arch x86_64
 BIN = $(shell swift build -c release $(ARCHS) --show-bin-path)
 APP := build/$(APP_NAME).app
 DMG := dist/KeepGoing.dmg
+DMGBUILD := .venv/bin/dmgbuild
 
 .PHONY: build app assets dmg notarize lint format clean
 
@@ -37,13 +38,18 @@ assets:
 		-o build/assets/make-assets
 	build/assets/make-assets build/assets
 	iconutil --convert icns build/assets/AppIcon.iconset --output Resources/AppIcon.icns
+	tiffutil -cathidpicheck build/assets/dmg-background.png \
+		build/assets/dmg-background@2x.png -out Resources/dmg-background.tiff
 
-dmg: app
-	rm -rf build/dmg "$(DMG)"
-	mkdir -p build/dmg dist
-	cp -R "$(APP)" build/dmg/
-	ln -s /Applications build/dmg/Applications
-	hdiutil create -volname "$(APP_NAME)" -srcfolder build/dmg -ov -format UDZO "$(DMG)"
+# dmgbuild lays out the DMG window (background, icon positions) without scripting Finder.
+$(DMGBUILD): Scripts/requirements.txt
+	python3 -m venv .venv
+	.venv/bin/pip install --quiet -r Scripts/requirements.txt
+
+dmg: app $(DMGBUILD)
+	rm -f "$(DMG)"
+	mkdir -p dist
+	$(DMGBUILD) -s Scripts/dmg-settings.py -D app="$(APP)" "$(APP_NAME)" "$(DMG)"
 	codesign --force --sign "$(SIGN_ID)" "$(DMG)"
 
 # Needs SIGN_ID set to a Developer ID Application identity.
