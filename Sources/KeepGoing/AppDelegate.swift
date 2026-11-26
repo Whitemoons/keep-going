@@ -4,16 +4,22 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem!
+  private var icon: StatusIcon!
+  private var demoTimer: Timer?
   private var busy = false
   private var hotKey: HotKey?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    if let button = statusItem.button {
-      button.target = self
-      button.action = #selector(statusItemClicked)
-      button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    statusItem = NSStatusBar.system.statusItem(withLength: CanIcon.size.width + 2)
+    guard let button = statusItem.button else { return }
+    icon = StatusIcon(button: button)
+    if CommandLine.arguments.contains("--demo") {
+      startDemo()
+      return
     }
+    button.target = self
+    button.action = #selector(statusItemClicked)
+    button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     refresh()
 
     let hotKey = HotKey { [weak self] in self?.toggle() }
@@ -22,6 +28,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     } else {
       NSLog("KeepGoing: 단축키를 등록하지 못했습니다 (다른 앱이 사용 중)")
     }
+  }
+
+  /// `--demo` cycles the icon between off and on without touching pmset, to preview the animation.
+  private func startDemo() {
+    var on = false
+    icon.set(.off)
+    let timer = Timer(timeInterval: 4, repeats: true) { [weak self] _ in
+      on.toggle()
+      self?.icon.set(on ? .on : .off)
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    demoTimer = timer
   }
 
   // MARK: - Status item
@@ -37,23 +55,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @discardableResult
   private func refresh() -> Bool? {
     let disabled = SleepState.isSleepDisabled()
-    let symbol: String
     let tooltip: String
     switch disabled {
     case true?:
-      symbol = "bolt.fill"
+      icon.set(.on)
       tooltip = "Keep Going: 켜짐 — 덮개를 닫아도 잠들지 않습니다"
     case false?:
-      symbol = "moon.zzz"
+      icon.set(.off)
       tooltip = "Keep Going: 꺼짐 — 덮개를 닫으면 잠듭니다"
     case nil:
-      symbol = "questionmark.circle"
+      icon.set(.unknown)
       tooltip = "Keep Going: 상태를 확인할 수 없습니다"
     }
-    let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
-    image?.isTemplate = true
-    statusItem.button?.image = image
     statusItem.button?.toolTip = tooltip
+    statusItem.button?.setAccessibilityLabel(tooltip)
     return disabled
   }
 
