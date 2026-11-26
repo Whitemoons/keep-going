@@ -5,15 +5,16 @@ import AppKit
 final class StatusIcon {
   enum State { case off, on, unknown }
 
-  private static let twitchInterval: TimeInterval = 10
-
   private let button: NSStatusBarButton
+  private let twitchInterval: TimeInterval
+  private let stage = AnimationStage()
   private var state: State?
-  private var frameTimer: Timer?
   private var twitchTimer: Timer?
+  private var finish: DispatchWorkItem?
 
-  init(button: NSStatusBarButton) {
+  init(button: NSStatusBarButton, twitchInterval: TimeInterval = 10) {
     self.button = button
+    self.twitchInterval = twitchInterval
   }
 
   func set(_ newState: State) {
@@ -31,48 +32,47 @@ final class StatusIcon {
     NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
   }
 
-  private func stopTimers() {
-    frameTimer?.invalidate()
-    frameTimer = nil
+  private func cancelPending() {
     twitchTimer?.invalidate()
     twitchTimer = nil
+    finish?.cancel()
+    finish = nil
+    stage.stop()
   }
 
   private func showResting() {
-    stopTimers()
+    cancelPending()
     guard state != .unknown else {
       let image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)
       image?.isTemplate = true
       button.image = image
       return
     }
-    button.image = CanIcon.image(CanIcon.Frame(lit: state == .on))
+    button.image = CanIcon.image(state == .on ? .on : .off)
     guard state == .on, !reduceMotion else { return }
-    let timer = Timer(timeInterval: Self.twitchInterval, repeats: false) { [weak self] _ in
+    let timer = Timer(timeInterval: twitchInterval, repeats: false) { [weak self] _ in
       self?.play(.twitch)
     }
+    // .common keeps the timer firing while a menu is open.
     RunLoop.main.add(timer, forMode: .common)
     twitchTimer = timer
   }
 
   private func play(_ animation: CanIcon.Animation) {
-    stopTimers()
-    guard !reduceMotion else {
+    cancelPending()
+    guard !reduceMotion, let window = button.window else {
       showResting()
       return
     }
-    let start = Date()
-    let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-      guard let self else { return }
-      let elapsed = Date().timeIntervalSince(start)
-      if elapsed >= animation.duration {
-        self.showResting()
-      } else {
-        self.button.image = CanIcon.image(animation.frame(at: elapsed))
-      }
-    }
-    // .common keeps the animation running while a menu is open.
-    RunLoop.main.add(timer, forMode: .common)
-    frameTimer = timer
+    let slot = window.convertToScreen(button.convert(button.bounds, to: nil))
+    let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    stage.play(
+      animation, at: NSPoint(x: slot.midX, y: slot.midY), color: dark ? .white : .black)
+    // The stage draws the can while it moves; keep the slot's width but show nothing in it.
+    button.image = NSImage(size: CanIcon.size)
+
+    let finish = DispatchWorkItem { [weak self] in self?.showResting() }
+    self.finish = finish
+    DispatchQueue.main.asyncAfter(deadline: .now() + animation.duration, execute: finish)
   }
 }
