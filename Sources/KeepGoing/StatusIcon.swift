@@ -7,10 +7,14 @@ final class StatusIcon {
 
   private let button: NSStatusBarButton
   private let twitchInterval: TimeInterval
+  private static let templateAlpha: CGFloat = 0.87
+  private static let handoverDelay: TimeInterval = 0.04
+  private static let fadeInCover: TimeInterval = 0.3
+
   private let stage = AnimationStage()
   private var state: State?
   private var twitchTimer: Timer?
-  private var finish: DispatchWorkItem?
+  private var pending: [DispatchWorkItem] = []
 
   init(button: NSStatusBarButton, twitchInterval: TimeInterval = 10) {
     self.button = button
@@ -35,8 +39,10 @@ final class StatusIcon {
   private func cancelPending() {
     twitchTimer?.invalidate()
     twitchTimer = nil
-    finish?.cancel()
-    finish = nil
+    for item in pending {
+      item.cancel()
+    }
+    pending = []
     stage.stop()
   }
 
@@ -66,13 +72,30 @@ final class StatusIcon {
     }
     let slot = window.convertToScreen(button.convert(button.bounds, to: nil))
     let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-    stage.play(
-      animation, at: NSPoint(x: slot.midX, y: slot.midY), color: dark ? .white : .black)
-    // The stage draws the can while it moves; keep the slot's width but show nothing in it.
-    button.image = NSImage(size: CanIcon.size)
+    // The menu bar draws template images slightly translucent; match it so the can
+    // does not change shade when the stage takes over.
+    let color = (dark ? NSColor.white : NSColor.black).withAlphaComponent(Self.templateAlpha)
+    stage.play(animation, at: NSPoint(x: slot.midX, y: slot.midY), color: color)
 
-    let finish = DispatchWorkItem { [weak self] in self?.showResting() }
-    self.finish = finish
-    DispatchQueue.main.asyncAfter(deadline: .now() + animation.duration, execute: finish)
+    // The stage needs a frame or two to appear. Emptying the slot only after that
+    // avoids a flash with no icon at all.
+    schedule(after: Self.handoverDelay) { [weak self] in
+      self?.button.image = NSImage(size: CanIcon.size)
+    }
+    // The menu bar fades a new image in through a blur. Put the real icon back while the
+    // stage still covers it with the identical resting can, and lift the stage afterwards.
+    schedule(after: animation.duration) { [weak self] in
+      guard let self else { return }
+      self.button.image = CanIcon.image(self.state == .on ? .on : .off)
+    }
+    schedule(after: animation.duration + Self.fadeInCover) { [weak self] in
+      self?.showResting()
+    }
+  }
+
+  private func schedule(after delay: TimeInterval, _ work: @escaping () -> Void) {
+    let item = DispatchWorkItem(block: work)
+    pending.append(item)
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
   }
 }
