@@ -169,6 +169,12 @@ enum CanIcon {
         widen = 0.35
         shift = CanIcon.ring(t, from: 0.09, amplitude: 0.8, decay: 14, hertz: 16)
       }
+      // A damped wobble never quite reaches zero. Ease the remainder out so the last frame
+      // is exactly the resting can and nothing snaps when the real icon takes over.
+      let settle = CanIcon.keyed([(CGFloat(duration) - 0.3, 1), (CGFloat(duration), 0)], at: t)
+      angle *= settle
+      shift *= settle
+      pulse = 1 + (pulse - 1) * settle
       // Keep the base planted while the can squashes and stretches.
       let drop = (1 - squash) * CanIcon.bodyHeight / 2
       let affine = CGAffineTransform(

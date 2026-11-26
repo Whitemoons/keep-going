@@ -42,11 +42,14 @@ final class AnimationStage {
     window.alphaValue = opacity
     window.setFrame(
       NSRect(
-        x: center.x - Self.size.width / 2, y: center.y - Self.size.height / 2,
+        x: (center.x - Self.size.width / 2).rounded(.down),
+        y: (center.y - Self.size.height / 2).rounded(.down),
         width: Self.size.width, height: Self.size.height), display: false)
     // Oversampled, so the bitmap stays sharp while it is rotated and scaled up.
     let scale = (window.screen?.backingScaleFactor ?? 2) * 2
-    let middle = CGPoint(x: Self.size.width / 2, y: Self.size.height / 2)
+    // Windows sit on whole points but the status item can sit on a half point. Place the
+    // can relative to where the window really ended up, or it lands a pixel off the icon.
+    let middle = CGPoint(x: center.x - window.frame.minX, y: center.y - window.frame.minY)
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
