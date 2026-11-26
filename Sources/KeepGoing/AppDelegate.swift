@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       withTitle: disabled == true ? "끄기" : "켜기", action: #selector(toggle),
       keyEquivalent: hotKey == nil ? "" : HotKey.keyEquivalent)
     toggleItem.keyEquivalentModifierMask = HotKey.modifierMask
+    let loginItem = menu.addItem(
+      withTitle: "로그인 시 자동 실행", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     menu.addItem(withTitle: "제거…", action: #selector(uninstall), keyEquivalent: "")
     menu.addItem(.separator())
     menu.addItem(
@@ -115,6 +118,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  @objc private func toggleLaunchAtLogin() {
+    let service = SMAppService.mainApp
+    do {
+      if service.status == .enabled {
+        try service.unregister()
+      } else {
+        try service.register()
+      }
+    } catch {
+      alert("로그인 시 자동 실행 설정을 바꾸지 못했습니다.", detail: error.localizedDescription)
+    }
+  }
+
   @objc private func uninstall() {
     guard !busy else { return }
     let confirm = NSAlert()
@@ -126,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard confirm.runModal() == .alertFirstButtonReturn else { return }
 
     let finish = {
+      // Best effort: a leftover login item only points at an app the user is about to delete.
+      try? SMAppService.mainApp.unregister()
       HelperClient.service.unregister { error in
         DispatchQueue.main.async {
           if let error {
