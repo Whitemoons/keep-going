@@ -12,11 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     statusItem = NSStatusBar.system.statusItem(withLength: CanIcon.size.width + 2)
     guard let button = statusItem.button else { return }
-    icon = StatusIcon(button: button)
     if CommandLine.arguments.contains("--demo") {
+      icon = StatusIcon(button: button, twitchInterval: 3)
       startDemo()
       return
     }
+    icon = StatusIcon(button: button)
     button.target = self
     button.action = #selector(statusItemClicked)
     button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -30,13 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// `--demo` cycles the icon between off and on without touching pmset, to preview the animation.
-  private func startDemo() {
-    var on = false
-    icon.set(.off)
-    let timer = Timer(timeInterval: 4, repeats: true) { [weak self] _ in
-      on.toggle()
-      self?.icon.set(on ? .on : .off)
+  /// `--demo` previews the animation without touching pmset: off for 3 seconds, then on
+  /// for 9 (long enough to show the idle twitch, which demo mode speeds up), repeating.
+  private func startDemo(on: Bool = false) {
+    icon.set(on ? .on : .off)
+    let timer = Timer(timeInterval: on ? 9 : 3, repeats: false) { [weak self] _ in
+      self?.startDemo(on: !on)
     }
     RunLoop.main.add(timer, forMode: .common)
     demoTimer = timer

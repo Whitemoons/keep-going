@@ -1,30 +1,93 @@
 import AppKit
+import QuartzCore
 
-/// Energy-drink can drawn in code so it stays crisp at menu bar size.
+/// Chunky energy-drink can drawn in code so it stays crisp at menu bar size.
 ///
-/// Monochrome throughout: off is an outlined can with a solid bolt, on is the inverse
-/// (solid can, bolt cut out). The image is a template, so the menu bar tints it.
+/// Monochrome: off is an outlined can with a solid barred Z, on is the inverse
+/// (solid can, mark cut out). The image is a template, so the menu bar tints it. Motion is expressed
+/// as layer transforms so Core Animation can run it instead of redrawing every frame.
 enum CanIcon {
-  /// One spark flying outward: `progress` runs 0 (just emitted) to 1 (gone).
-  struct Spark {
-    var degrees: CGFloat
-    var progress: CGFloat
+  static let size = NSSize(width: 16, height: 18)
+  private static let bodyHeight: CGFloat = 15.5
+
+  /// What the can shows: asleep (outlined can, solid mark) or awake (solid can, mark cut out).
+  enum Look: CaseIterable {
+    case off, on
   }
 
-  struct Pose {
-    var angle: CGFloat = 0
-    /// Vertical scale; the width compensates so the can keeps its volume.
-    var stretch: CGFloat = 1
-    var lift: CGFloat = 0
-    var dx: CGFloat = 0
-    /// 0 is a pristine can, 1 is crushed to half height.
-    var crumple: CGFloat = 0
-    var sparks: [Spark] = []
+  static func image(_ look: Look) -> NSImage {
+    let image = NSImage(size: size, flipped: false) { _ in
+      guard let context = NSGraphicsContext.current?.cgContext else { return false }
+      context.translateBy(x: size.width / 2, y: (size.height - bodyHeight) / 2)
+      NSColor.black.set()
+      if look == .off {
+        outline().stroke()
+      } else {
+        silhouette().fill()
+        // Punch the mark out of the solid can.
+        context.setBlendMode(.clear)
+      }
+      for stroke in mark() {
+        stroke.fill()
+      }
+      return true
+    }
+    image.isTemplate = true
+    return image
   }
 
-  struct Frame {
-    var lit: Bool
-    var pose = Pose()
+  // The shapes below share one coordinate space: origin at the can's bottom center,
+  // 14 wide and `bodyHeight` tall. The app icon is drawn from the same shapes.
+
+  static let bodySize = NSSize(width: 14, height: bodyHeight)
+
+  /// Can silhouette, tapering at top and bottom.
+  static func silhouette() -> NSBezierPath {
+    let can = NSBezierPath()
+    can.move(to: NSPoint(x: -5.8, y: 0))
+    can.line(to: NSPoint(x: 5.8, y: 0))
+    can.line(to: NSPoint(x: 7, y: 1.6))
+    can.line(to: NSPoint(x: 7, y: 13.6))
+    can.line(to: NSPoint(x: 5.6, y: bodyHeight))
+    can.line(to: NSPoint(x: -5.6, y: bodyHeight))
+    can.line(to: NSPoint(x: -7, y: 13.6))
+    can.line(to: NSPoint(x: -7, y: 1.6))
+    can.close()
+    return can
+  }
+
+  /// The silhouette as a stroke that stays inside its own bounds.
+  static func outline() -> NSBezierPath {
+    let lineWidth: CGFloat = 1.4
+    let can = silhouette()
+    var inset = AffineTransform(translationByX: 0, byY: bodyHeight / 2)
+    inset.scale(x: (14 - lineWidth) / 14, y: (bodyHeight - lineWidth) / bodyHeight)
+    inset.translate(x: 0, y: -bodyHeight / 2)
+    can.transform(using: inset)
+    can.lineWidth = lineWidth
+    can.lineJoinStyle = .round
+    return can
+  }
+
+  /// A "Z" with a bar through it (no sleep), as separate strokes to fill one by one.
+  /// The weights vary on purpose so it reads as a mark, not as typed text: the top bar
+  /// swells to the right, the bottom bar to the left, and the diagonal and crossbar are lighter.
+  static func mark() -> [NSBezierPath] {
+    let strokes: [[(CGFloat, CGFloat)]] = [
+      [(-3.8, 12.05), (3.8, 12.05), (3.8, 10.2), (-3.8, 10.9)],
+      [(-3.8, 5.5), (3.8, 4.8), (3.8, 3.45), (-3.8, 3.45)],
+      [(1.5, 10.5), (3.8, 10.5), (-1.5, 5.2), (-3.8, 5.2)],
+      [(-2.7, 8.35), (2.7, 8.35), (2.7, 7.15), (-2.7, 7.15)],
+    ]
+    return strokes.map { points in
+      let path = NSBezierPath()
+      path.move(to: NSPoint(x: points[0].0, y: points[0].1))
+      for point in points.dropFirst() {
+        path.line(to: NSPoint(x: point.0, y: point.1))
+      }
+      path.close()
+      return path
+    }
   }
 
   enum Animation {
@@ -32,79 +95,90 @@ enum CanIcon {
 
     var duration: TimeInterval {
       switch self {
-      case .turnOn: return 2.3
-      case .twitch: return 0.8
-      case .turnOff: return 1.0
+      case .turnOn: return 2.0
+      case .twitch: return 1.1
+      case .turnOff: return 0.9
       }
     }
 
-    func frame(at time: TimeInterval) -> Frame {
-      let t = CGFloat(min(max(time, 0), duration))
-      var pose = Pose()
+    var startLook: Look { self == .turnOn ? .off : .on }
+
+    /// Moments at which the icon flips between asleep and awake.
+    /// The rapid flips read as a strobe.
+    var lookSchedule: [(TimeInterval, Look)] {
       switch self {
       case .turnOn:
-        // Crouch, two hops, then thrash on the base while sparks fly until the energy settles.
-        pose.stretch = CanIcon.keyed(
-          [
-            (0, 1), (0.1, 0.78), (0.2, 1.14), (0.34, 1.02), (0.42, 0.82), (0.52, 1.12),
-            (0.64, 1.02), (0.72, 0.86), (0.84, 1.04), (0.95, 1),
-          ], at: t)
-        pose.lift = CanIcon.keyed(
-          [(0.1, 0), (0.24, 2), (0.38, 0), (0.44, 0), (0.56, 1.4), (0.7, 0)], at: t)
-        pose.angle =
-          CanIcon.ring(t, from: 0.1, amplitude: 0.22, decay: 4, hertz: 5)
-          + CanIcon.ring(t, from: 0.7, amplitude: 0.6, decay: 2.4, hertz: 6.5)
-        pose.dx = CanIcon.ring(t, from: 0.7, amplitude: 1.4, decay: 3, hertz: 11)
-        let all: [CGFloat] = [-25, 10, 45, 65, 115, 135, 170, 205]
-        let schedule: [(CGFloat, [CGFloat])] = [
-          (0.1, [-25, 205]), (0.38, all), (0.55, [45, 135]), (0.7, all),
-          (0.85, [10, 65, 135, 205]), (1.0, [-25, 45, 115, 170]), (1.15, [10, 65, 135, 205]),
-          (1.3, [-25, 45, 115, 170]), (1.5, [10, 170]), (1.75, [45, 135]),
+        return [
+          (0.1, .on), (0.34, .off), (0.42, .on), (0.56, .off), (0.64, .on), (0.8, .off),
+          (0.88, .on), (1.06, .off), (1.14, .on),
         ]
-        pose.sparks = schedule.flatMap { CanIcon.burst(t, at: $0.0, life: 0.45, degrees: $0.1) }
-        return Frame(lit: t >= 0.1, pose: pose)
-      case .twitch:
-        pose.stretch = CanIcon.keyed([(0, 1), (0.08, 0.88), (0.18, 1.08), (0.32, 1)], at: t)
-        pose.lift = CanIcon.keyed([(0.08, 0), (0.18, 0.8), (0.3, 0)], at: t)
-        pose.angle = CanIcon.ring(t, from: 0.08, amplitude: 0.32, decay: 5, hertz: 6)
-        pose.sparks =
-          CanIcon.burst(t, at: 0.08, life: 0.45, degrees: [10, 65, 170])
-          + CanIcon.burst(t, at: 0.26, life: 0.4, degrees: [45, 115, 205])
-        return Frame(lit: true, pose: pose)
-      case .turnOff:
-        // Slammed flat, a small shudder while crushed, then it snaps back upright
-        // and flips to the outline at the moment it springs up.
-        pose.crumple = CanIcon.keyed(
-          [
-            (0, 0), (0.1, 1), (0.3, 1), (0.37, 0.86), (0.44, 1.03), (0.5, 1), (0.62, 1),
-            (0.72, -0.18), (0.82, 0.06), (0.92, 0),
-          ], at: t)
-        pose.dx =
-          CanIcon.ring(t, from: 0.1, amplitude: 0.6, decay: 14, hertz: 16)
-          + CanIcon.ring(t, from: 0.3, amplitude: 0.5, decay: 12, hertz: 12)
-        return Frame(lit: t < 0.64, pose: pose)
+      case .twitch: return [(0.12, .off), (0.2, .on), (0.36, .off), (0.44, .on)]
+      case .turnOff: return [(0.6, .off)]
       }
     }
-  }
 
-  /// Taller and wider than the resting can needs, to leave room for hops and sparks.
-  static let size = NSSize(width: 26, height: 22)
-  private static let bodyHeight: CGFloat = 12.6
-  private static let baseline: CGFloat = 4.7
-
-  static func image(_ frame: Frame) -> NSImage {
-    let image = NSImage(size: size, flipped: false) { _ in
-      guard let context = NSGraphicsContext.current?.cgContext else { return false }
-      NSColor.black.set()
-      drawCan(in: context, frame: frame)
-      drawSparks(frame.pose.sparks)
-      return true
+    /// Spark bursts: when each fires and in which directions (degrees, 0 is right).
+    /// Mostly sideways and downward, because the screen edge is right above the menu bar.
+    var sparkBursts: [(TimeInterval, [CGFloat])] {
+      switch self {
+      case .turnOn:
+        return [
+          (0.2, [0, 180, 28, 152, -28, 208, -60, -120, -90, 55, 125]),
+          (0.45, [0, 180, -60, -120]), (0.65, [28, 152, -28, 208, -90]),
+          (0.85, [0, 180, -60, -120]), (1.05, [28, 152, -28, 208]), (1.3, [0, 180, -90]),
+          (1.55, [-28, 208]),
+        ]
+      case .twitch:
+        return [(0.12, [0, 180, 28, 152, -28, 208]), (0.4, [0, 180, -60, -120])]
+      case .turnOff:
+        // Air squeezed out sideways as the can is flattened.
+        return [(0.09, [0, 180, -15, 195])]
+      }
     }
-    image.isTemplate = true
-    return image
-  }
 
-  // MARK: - Motion helpers
+    func transform(at time: TimeInterval) -> CATransform3D {
+      let t = CGFloat(time)
+      var squash: CGFloat = 1
+      var widen: CGFloat = 0.6
+      var pulse: CGFloat = 1
+      var lift: CGFloat = 0
+      var shift: CGFloat = 0
+      var angle: CGFloat = 0
+      switch self {
+      case .turnOn:
+        // Crouch, pop up, then thrash from side to side until the energy settles.
+        squash = CanIcon.keyed([(0, 1), (0.1, 0.7), (0.2, 1.15), (0.32, 0.92), (0.42, 1)], at: t)
+        lift = CanIcon.keyed([(0.1, 0), (0.2, 1), (0.32, 0)], at: t)
+        pulse = 1 + CanIcon.ring(t, from: 0.2, amplitude: 0.15, decay: 2, hertz: 4.3)
+        angle = CanIcon.ring(t, from: 0.2, amplitude: 0.7, decay: 2.1, hertz: 5.5)
+        shift = CanIcon.ring(t, from: 0.2, amplitude: 5, decay: 2.2, hertz: 3.4)
+      case .twitch:
+        squash = CanIcon.keyed(
+          [(0, 1), (0.08, 0.78), (0.18, 1.14), (0.3, 0.94), (0.4, 1)], at: t)
+        lift = CanIcon.keyed([(0.08, 0), (0.18, 1), (0.3, 0)], at: t)
+        pulse = 1 + CanIcon.ring(t, from: 0.18, amplitude: 0.1, decay: 4, hertz: 4.3)
+        angle = CanIcon.ring(t, from: 0.1, amplitude: 0.5, decay: 3.6, hertz: 5.5)
+        shift = CanIcon.ring(t, from: 0.1, amplitude: 3, decay: 3.8, hertz: 3.4)
+      case .turnOff:
+        // Slammed flat, a small shudder while crushed, then it snaps back upright.
+        squash = CanIcon.keyed(
+          [
+            (0, 1), (0.09, 0.4), (0.3, 0.4), (0.36, 0.5), (0.42, 0.38), (0.48, 0.4), (0.56, 0.4),
+            (0.64, 1.14), (0.74, 0.95), (0.84, 1),
+          ], at: t)
+        widen = 0.35
+        shift = CanIcon.ring(t, from: 0.09, amplitude: 0.8, decay: 14, hertz: 16)
+      }
+      // Keep the base planted while the can squashes and stretches.
+      let drop = (1 - squash) * CanIcon.bodyHeight / 2
+      let affine = CGAffineTransform(
+        scaleX: pulse * (1 + (1 - squash) * widen), y: pulse * squash
+      )
+      .concatenating(CGAffineTransform(rotationAngle: angle))
+      .concatenating(CGAffineTransform(translationX: shift, y: lift - drop))
+      return CATransform3DMakeAffineTransform(affine)
+    }
+  }
 
   /// Smoothstep interpolation through (time, value) keyframes.
   private static func keyed(_ keys: [(CGFloat, CGFloat)], at time: CGFloat) -> CGFloat {
@@ -125,101 +199,5 @@ enum CanIcon {
     let elapsed = time - start
     guard elapsed > 0 else { return 0 }
     return amplitude * exp(-decay * elapsed) * sin(2 * .pi * hertz * elapsed)
-  }
-
-  private static func burst(
-    _ time: CGFloat, at start: CGFloat, life: CGFloat, degrees: [CGFloat]
-  ) -> [Spark] {
-    let progress = (time - start) / life
-    guard progress >= 0, progress < 1 else { return [] }
-    return degrees.map { Spark(degrees: $0, progress: progress) }
-  }
-
-  // MARK: - Drawing
-
-  private static func drawCan(in context: CGContext, frame: Frame) {
-    let pose = frame.pose
-    context.saveGState()
-    // Pivot at the bottom center so the can rocks on its base.
-    context.translateBy(x: size.width / 2 + pose.dx, y: baseline + pose.lift)
-    context.rotate(by: pose.angle)
-    context.scaleBy(x: 1 + (1 - pose.stretch) * 0.6, y: pose.stretch)
-
-    let height = bodyHeight * (1 - 0.5 * pose.crumple)
-    let can = body(height: height, dent: max(pose.crumple, 0))
-
-    let bolt = NSBezierPath()
-    bolt.move(to: NSPoint(x: 0.9, y: 10))
-    bolt.line(to: NSPoint(x: -1.9, y: 5.7))
-    bolt.line(to: NSPoint(x: -0.2, y: 5.7))
-    bolt.line(to: NSPoint(x: -0.9, y: 2.6))
-    bolt.line(to: NSPoint(x: 1.9, y: 6.9))
-    bolt.line(to: NSPoint(x: 0.2, y: 6.9))
-    bolt.close()
-    bolt.transform(using: AffineTransform(scaleByX: 1, byY: height / bodyHeight))
-
-    if frame.lit {
-      can.fill()
-      // Punch the bolt out of the solid can.
-      context.setBlendMode(.clear)
-      bolt.fill()
-    } else {
-      // Shrink toward the center so the stroke stays inside the silhouette.
-      let lineWidth: CGFloat = 1.2
-      var inset = AffineTransform(translationByX: 0, byY: height / 2)
-      inset.scale(x: (7 - lineWidth) / 7, y: (height - lineWidth) / height)
-      inset.translate(x: 0, y: -height / 2)
-      can.transform(using: inset)
-      can.lineWidth = lineWidth
-      can.lineJoinStyle = .round
-      can.stroke()
-      // A squashed bolt inside a squashed outline turns into an unreadable knot.
-      if pose.crumple < 0.6 {
-        bolt.fill()
-      }
-    }
-    context.restoreGState()
-  }
-
-  /// Can silhouette, tapering at top and bottom. `dent` folds the sides in like a crushed can.
-  private static func body(height: CGFloat, dent: CGFloat) -> NSBezierPath {
-    let foot = min(1, height * 0.1)
-    let shoulder = height - 1.4 * (1 - 0.4 * dent)
-    let path = NSBezierPath()
-    path.move(to: NSPoint(x: -2.8, y: 0))
-    path.line(to: NSPoint(x: 2.8, y: 0))
-    path.line(to: NSPoint(x: 3.5, y: foot))
-    path.line(to: NSPoint(x: 3.5 + 0.5 * dent, y: height * 0.3))
-    path.line(to: NSPoint(x: 3.5 - 1.7 * dent, y: height * 0.48))
-    path.line(to: NSPoint(x: 3.5 + 0.3 * dent, y: height * 0.68))
-    path.line(to: NSPoint(x: 3.5, y: shoulder))
-    path.line(to: NSPoint(x: 2.7, y: height - 0.5 * dent))
-    path.line(to: NSPoint(x: -2.7, y: height))
-    path.line(to: NSPoint(x: -3.5, y: shoulder))
-    path.line(to: NSPoint(x: -3.5 - 0.3 * dent, y: height * 0.74))
-    path.line(to: NSPoint(x: -3.5 + 1.5 * dent, y: height * 0.56))
-    path.line(to: NSPoint(x: -3.5 - 0.5 * dent, y: height * 0.36))
-    path.line(to: NSPoint(x: -3.5, y: foot))
-    path.close()
-    return path
-  }
-
-  private static func drawSparks(_ sparks: [Spark]) {
-    let center = NSPoint(x: size.width / 2, y: baseline + bodyHeight / 2)
-    for spark in sparks {
-      let radians = spark.degrees * .pi / 180
-      let travelled = 1 - (1 - spark.progress) * (1 - spark.progress)
-      let inner = 5.2 + 4.5 * travelled
-      let outer = inner + 0.4 + 2.4 * (1 - spark.progress)
-      let path = NSBezierPath()
-      path.lineWidth = 1.2
-      path.lineCapStyle = .round
-      path.move(
-        to: NSPoint(x: center.x + cos(radians) * inner, y: center.y + sin(radians) * inner))
-      path.line(
-        to: NSPoint(x: center.x + cos(radians) * outer, y: center.y + sin(radians) * outer))
-      NSColor.black.withAlphaComponent(1 - spark.progress * spark.progress).setStroke()
-      path.stroke()
-    }
   }
 }
