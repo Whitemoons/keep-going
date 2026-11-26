@@ -1,48 +1,61 @@
 # Keep Going
 
-맥북 덮개를 닫아도 잠들지 않게 하는 메뉴바 앱. 메뉴바 아이콘을 클릭하고 Touch ID로
-확인하면 켜지고, 다시 클릭하면 꺼진다.
+맥북 덮개를 닫아도 잠들지 않게 해주는 메뉴바 앱입니다. 메뉴바 아이콘을 한 번 클릭하면
+켜지고, 다시 클릭하면 꺼집니다.
 
-내부적으로는 `pmset -a disablesleep 1|0`을 루트 헬퍼가 대신 실행한다.
+## 기능
 
-> 켜둔 채로 가방에 넣으면 발열·배터리 방전 위험이 있다.
+- **잠자기 방지 켜기/끄기** — 켜 두면 덮개를 닫아도 맥이 계속 동작합니다.
+- **Touch ID 확인** — 켜고 끌 때마다 Touch ID로 확인합니다. Touch ID가 없으면 로그인
+  암호를 묻습니다.
+- **상태 표시** — 메뉴바 아이콘이 윤곽선이면 꺼짐, 꽉 채워져 있으면 켜짐입니다. 켜져
+  있는 동안에는 잊지 않도록 10초마다 아이콘이 흔들립니다.
+- **단축키** — 어떤 앱을 쓰고 있든 키보드로 켜고 끌 수 있습니다.
+- **로그인 시 자동 실행** — 맥을 켤 때 함께 실행되도록 설정할 수 있습니다.
 
-## 구조
+## 처음 설정
 
-| 구성 | 역할 |
+1. `KeepGoing.dmg`를 열고 **Keep Going**을 응용 프로그램 폴더로 드래그한 뒤 실행합니다.
+2. 메뉴바에 생긴 아이콘을 클릭합니다. 처음 한 번은 시스템 설정이 열립니다.
+   **일반 > 로그인 항목 및 확장 프로그램**에서 Keep Going을 켜 주세요.
+3. 아이콘을 다시 클릭하고 Touch ID로 확인하면 켜집니다.
+4. (선택) 아이콘을 오른쪽 클릭해 **로그인 시 자동 실행**을 켭니다.
+
+## 사용법
+
+| 동작 | 결과 |
 |---|---|
-| `Sources/KeepGoing` | 메뉴바 앱. Touch ID 확인 후 헬퍼에 요청 |
-| `Sources/KeepGoingHelper` | `SMAppService`로 등록되는 루트 LaunchDaemon. 켜기/끄기만 수행하고, 같은 팀 ID로 서명된 Keep Going 앱의 요청만 받는다 |
-| `Sources/KeepGoingShared` | XPC 프로토콜과 식별자 |
+| 아이콘 왼쪽 클릭 | 켜기/끄기 |
+| `⌃⎋` (Control + Esc) | 켜기/끄기 |
+| 아이콘 오른쪽 클릭 | 메뉴 (상태, 로그인 시 자동 실행, 제거, 종료) |
 
-macOS 13 이상, Apple Silicon/Intel 유니버설.
+## 주의
 
-## 빌드
+- 켜 둔 채로 맥북을 가방에 넣으면 발열과 배터리 방전 위험이 있습니다.
+- 앱을 종료해도 잠자기 방지 설정은 그대로 남습니다. 끈 다음에 종료하세요.
+
+## 제거
+
+아이콘을 오른쪽 클릭해 **제거…**를 선택합니다. 잠자기 방지를 끄고 백그라운드 항목 등록을
+해제합니다. 그다음 앱을 휴지통으로 옮기면 됩니다.
+
+## 요구 사항
+
+macOS 13 이상 (Apple Silicon, Intel).
+
+## 직접 빌드
+
+Xcode와 Python 3가 필요합니다.
 
 ```bash
-make app                 # build/Keep Going.app
-make dmg                 # dist/KeepGoing.dmg
+make dmg      # dist/KeepGoing.dmg
 make lint
-make assets              # 아이콘·DMG 배경 다시 생성 (모양을 바꿨을 때만)
 ```
 
-`make dmg`는 DMG 창 배치를 위해 `dmgbuild`(MIT)를 `.venv`에 설치한다. Python 3가 필요하다.
+서명 인증서는 `SIGN_ID`로 지정합니다 (기본값 `Apple Development`). 백그라운드 헬퍼는 팀
+ID가 있는 서명에서만 동작하므로 ad-hoc 서명으로는 켜고 끌 수 없습니다. 배포용 공증은
+`make notarize SIGN_ID="Developer ID Application: <이름> (<팀 ID>)"`입니다.
 
-서명 인증서는 `SIGN_ID`로 바꾼다 (기본값 `Apple Development`). 헬퍼는 팀 ID가 있는
-서명이 필요해서 ad-hoc 서명(`-`)으로는 동작하지 않는다.
+## 라이선스
 
-배포용:
-
-```bash
-xcrun notarytool store-credentials keep-going   # 최초 1회
-make notarize SIGN_ID="Developer ID Application: <이름> (<팀 ID>)"
-```
-
-## 사용
-
-1. DMG에서 `Keep Going`을 Applications로 옮기고 실행한다.
-2. 처음 클릭하면 시스템 설정 > 일반 > 로그인 항목 및 확장 프로그램에서 백그라운드
-   실행을 허용한다 (최초 1회).
-3. 왼쪽 클릭 또는 ⌃⎋ (Control + Esc): 켜기/끄기. 오른쪽 클릭: 메뉴.
-
-제거는 메뉴의 **제거…**를 쓴다. 잠자기 방지를 끄고 헬퍼 등록을 해제한다.
+[MIT](LICENSE)
