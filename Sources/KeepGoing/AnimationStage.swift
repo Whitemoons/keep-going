@@ -18,6 +18,7 @@ final class AnimationStage {
     window.isOpaque = false
     window.backgroundColor = .clear
     window.hasShadow = false
+    window.animationBehavior = .none
     window.ignoresMouseEvents = true
     window.isReleasedWhenClosed = false
     window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
@@ -28,11 +29,17 @@ final class AnimationStage {
     view.wantsLayer = true
     window.contentView = view
     root = view.layer ?? CALayer()
+    // Shown once, empty, and then left on screen between animations: macOS blurs and
+    // fades a window as it appears and disappears, which smeared the icon at the start
+    // and end of every animation.
+    window.orderFrontRegardless()
   }
 
   /// Plays `animation` centered on `center` (screen coordinates), drawn in `color`.
-  func play(_ animation: CanIcon.Animation, at center: NSPoint, color: NSColor) {
+  /// `opacity` applies to everything drawn, to match how translucent the menu bar draws icons.
+  func play(_ animation: CanIcon.Animation, at center: NSPoint, color: NSColor, opacity: CGFloat) {
     stop()
+    window.alphaValue = opacity
     window.setFrame(
       NSRect(
         x: center.x - Self.size.width / 2, y: center.y - Self.size.height / 2,
@@ -50,12 +57,13 @@ final class AnimationStage {
       }
     }
     CATransaction.commit()
-    window.orderFrontRegardless()
   }
 
   func stop() {
-    window.orderOut(nil)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
     root.sublayers = nil
+    CATransaction.commit()
   }
 
   private func addCan(
