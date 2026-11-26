@@ -8,6 +8,8 @@
 	<string>Keep Going</string>
 	<key>CFBundleExecutable</key>
 	<string>KeepGoing</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.whitemoon.keepgoing</string>
 	<key>CFBundleInfoDictionaryVersion</key>
