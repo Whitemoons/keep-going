@@ -3,10 +3,10 @@ import Carbon.HIToolbox
 
 /// System-wide shortcut. Carbon hot keys need no Accessibility permission.
 final class HotKey {
-  static let keyCode = UInt32(kVK_ANSI_K)
-  static let carbonModifiers = UInt32(controlKey | optionKey | cmdKey)
-  static let keyEquivalent = "k"
-  static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .command]
+  static let keyCode = UInt32(kVK_Escape)
+  static let carbonModifiers = UInt32(controlKey)
+  static let keyEquivalent = "\u{1B}"
+  static let modifierMask: NSEvent.ModifierFlags = [.control]
 
   private var hotKeyRef: EventHotKeyRef?
   private var handlerRef: EventHandlerRef?
