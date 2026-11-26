@@ -9,7 +9,6 @@ final class StatusIcon {
   private let twitchInterval: TimeInterval
   private static let templateAlpha: CGFloat = 0.87
   private static let handoverDelay: TimeInterval = 0.04
-  private static let fadeInCover: TimeInterval = 0.3
 
   private let stage = AnimationStage()
   private var state: State?
@@ -74,21 +73,20 @@ final class StatusIcon {
     let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     // The menu bar draws template images slightly translucent; match it so the can
     // does not change shade when the stage takes over.
-    let color = (dark ? NSColor.white : NSColor.black).withAlphaComponent(Self.templateAlpha)
-    stage.play(animation, at: NSPoint(x: slot.midX, y: slot.midY), color: color)
+    stage.play(
+      animation, at: NSPoint(x: slot.midX, y: slot.midY), color: dark ? .white : .black,
+      opacity: Self.templateAlpha)
 
-    // The stage needs a frame or two to appear. Emptying the slot only after that
-    // avoids a flash with no icon at all.
+    // The slot and the stage are drawn by different processes, so swapping them in the
+    // same instant can leave one frame with no icon. Overlap them briefly at both ends.
     schedule(after: Self.handoverDelay) { [weak self] in
       self?.button.image = NSImage(size: CanIcon.size)
     }
-    // The menu bar fades a new image in through a blur. Put the real icon back while the
-    // stage still covers it with the identical resting can, and lift the stage afterwards.
     schedule(after: animation.duration) { [weak self] in
       guard let self else { return }
       self.button.image = CanIcon.image(self.state == .on ? .on : .off)
     }
-    schedule(after: animation.duration + Self.fadeInCover) { [weak self] in
+    schedule(after: animation.duration + Self.handoverDelay) { [weak self] in
       self?.showResting()
     }
   }
