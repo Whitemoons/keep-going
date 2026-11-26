@@ -1,0 +1,200 @@
+import AppKit
+import LocalAuthentication
+import ServiceManagement
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  private var statusItem: NSStatusItem!
+  private var busy = false
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    if let button = statusItem.button {
+      button.target = self
+      button.action = #selector(statusItemClicked)
+      button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+    refresh()
+  }
+
+  // MARK: - Status item
+
+  @objc private func statusItemClicked() {
+    if NSApp.currentEvent?.type == .rightMouseUp {
+      showMenu()
+    } else {
+      toggle()
+    }
+  }
+
+  @discardableResult
+  private func refresh() -> Bool? {
+    let disabled = SleepState.isSleepDisabled()
+    let symbol: String
+    let tooltip: String
+    switch disabled {
+    case true?:
+      symbol = "bolt.fill"
+      tooltip = "Keep Going: 켜짐 — 덮개를 닫아도 잠들지 않습니다"
+    case false?:
+      symbol = "moon.zzz"
+      tooltip = "Keep Going: 꺼짐 — 덮개를 닫으면 잠듭니다"
+    case nil:
+      symbol = "questionmark.circle"
+      tooltip = "Keep Going: 상태를 확인할 수 없습니다"
+    }
+    let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
+    image?.isTemplate = true
+    statusItem.button?.image = image
+    statusItem.button?.toolTip = tooltip
+    return disabled
+  }
+
+  private func showMenu() {
+    let disabled = refresh()
+    let menu = NSMenu()
+    let state = disabled == nil ? "상태 알 수 없음" : (disabled == true ? "켜짐" : "꺼짐")
+    menu.addItem(withTitle: "잠자기 방지: \(state)", action: nil, keyEquivalent: "")
+    menu.addItem(.separator())
+    menu.addItem(
+      withTitle: disabled == true ? "끄기" : "켜기", action: #selector(toggle),
+      keyEquivalent: "")
+    menu.addItem(withTitle: "제거…", action: #selector(uninstall), keyEquivalent: "")
+    menu.addItem(.separator())
+    menu.addItem(
+      withTitle: "종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) {
+      item.target = self
+    }
+    // Assigning the menu makes the click open it; clear it so left click toggles again.
+    statusItem.menu = menu
+    statusItem.button?.performClick(nil)
+    statusItem.menu = nil
+  }
+
+  // MARK: - Actions
+
+  @objc private func toggle() {
+    guard !busy, ensureHelperReady() else { return }
+    guard let current = refresh() else {
+      alert("현재 잠자기 설정을 읽지 못했습니다.")
+      return
+    }
+    let target = !current
+    let reason = target ? "잠자기 방지를 켭니다" : "잠자기 방지를 끕니다"
+    apply(target, reason: reason) { [weak self] error in
+      guard let self else { return }
+      if let error {
+        self.alert("설정을 바꾸지 못했습니다.", detail: error.localizedDescription)
+      } else if self.refresh() != target {
+        self.alert("설정이 적용되지 않았습니다.", detail: "pmset 값이 바뀌지 않았습니다.")
+      }
+    }
+  }
+
+  @objc private func uninstall() {
+    guard !busy else { return }
+    let confirm = NSAlert()
+    confirm.messageText = "Keep Going을 제거할까요?"
+    confirm.informativeText = "잠자기 방지를 끄고 백그라운드 헬퍼 등록을 해제한 뒤 종료합니다. 앱은 직접 휴지통으로 옮겨주세요."
+    confirm.addButton(withTitle: "제거")
+    confirm.addButton(withTitle: "취소")
+    NSApp.activate(ignoringOtherApps: true)
+    guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+    let finish = {
+      HelperClient.service.unregister { error in
+        DispatchQueue.main.async {
+          if let error {
+            self.alert("헬퍼 등록을 해제하지 못했습니다.", detail: error.localizedDescription)
+          } else {
+            NSApp.terminate(nil)
+          }
+        }
+      }
+    }
+    // Sleep prevention can only be switched off through the helper, so do it before unregistering.
+    guard HelperClient.service.status == .enabled, refresh() != false else {
+      finish()
+      return
+    }
+    apply(false, reason: "잠자기 방지를 끄고 Keep Going을 제거합니다") { [weak self] error in
+      if let error {
+        self?.alert("잠자기 방지를 끄지 못해 제거를 중단했습니다.", detail: error.localizedDescription)
+      } else {
+        self?.refresh()
+        finish()
+      }
+    }
+  }
+
+  /// Touch ID (or password fallback) first, then the privileged change.
+  private func apply(_ disabled: Bool, reason: String, completion: @escaping (Error?) -> Void) {
+    busy = true
+    let context = LAContext()
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) {
+      success, error in
+      DispatchQueue.main.async {
+        guard success else {
+          self.busy = false
+          // Cancelling the prompt is a choice, not a failure worth an alert.
+          if let error = error as? LAError,
+            [.userCancel, .appCancel, .systemCancel].contains(error.code)
+          {
+            return
+          }
+          completion(error ?? HelperError(message: "인증에 실패했습니다."))
+          return
+        }
+        HelperClient.setSleepDisabled(disabled) { error in
+          self.busy = false
+          completion(error)
+        }
+      }
+    }
+  }
+
+  // MARK: - Helper registration
+
+  private func ensureHelperReady() -> Bool {
+    let path = Bundle.main.bundlePath
+    if path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") {
+      alert(
+        "먼저 응용 프로그램 폴더로 옮겨주세요.",
+        detail: "Keep Going을 Applications 폴더로 드래그한 뒤 거기에서 실행해야 합니다.")
+      return false
+    }
+    let service = HelperClient.service
+    if service.status == .notRegistered || service.status == .notFound {
+      do {
+        try service.register()
+      } catch {
+        if service.status != .requiresApproval {
+          alert("헬퍼를 등록하지 못했습니다.", detail: error.localizedDescription)
+          return false
+        }
+      }
+    }
+    switch service.status {
+    case .enabled:
+      return true
+    case .requiresApproval:
+      alert(
+        "백그라운드 실행 허용이 필요합니다.",
+        detail: "시스템 설정 > 일반 > 로그인 항목 및 확장 프로그램에서 Keep Going을 켠 뒤 다시 클릭해주세요.")
+      SMAppService.openSystemSettingsLoginItems()
+      return false
+    default:
+      alert("헬퍼를 사용할 수 없습니다.", detail: "등록 상태: \(service.status.rawValue)")
+      return false
+    }
+  }
+
+  private func alert(_ message: String, detail: String = "") {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = message
+    alert.informativeText = detail
+    NSApp.activate(ignoringOtherApps: true)
+    alert.runModal()
+  }
+}
