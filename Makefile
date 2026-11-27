@@ -54,6 +54,7 @@ dmg: app $(DMGBUILD)
 	$(DMGBUILD) -s Scripts/dmg-settings.py -D app="$(APP)" \
 		-D applications=build/dmg/Applications "$(APP_NAME)" "$(DMG)"
 	codesign --force --timestamp --sign "$(SIGN_ID)" "$(DMG)"
+	swift Scripts/set-icon/main.swift Resources/AppIcon.icns "$(DMG)"
 
 # Needs SIGN_ID set to a Developer ID Application identity.
 notarize: dmg

@@ -27,3 +27,6 @@ icon_locations = {
     os.path.basename(app): (160, 185),
     os.path.basename(applications): (440, 185),
 }
+
+# Icon of the mounted volume (Finder sidebar, desktop).
+icon = "Resources/AppIcon.icns"
