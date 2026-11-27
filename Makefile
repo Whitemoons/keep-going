@@ -1,5 +1,5 @@
 APP_NAME := Keep Going
-BUNDLE_ID := com.whitemoon.keepgoing
+BUNDLE_ID := io.github.whitemoons.keepgoing
 HELPER_ID := $(BUNDLE_ID).helper
 # Any identity `codesign -s` accepts. Use "Developer ID Application: ..." for distribution.
 SIGN_ID ?= Apple Development

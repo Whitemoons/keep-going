@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.whitemoon.keepgoing.helper</string>
+	<string>io.github.whitemoons.keepgoing.helper</string>
 	<key>BundleProgram</key>
 	<string>Contents/MacOS/KeepGoingHelper</string>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.whitemoon.keepgoing</string>
+		<string>io.github.whitemoons.keepgoing</string>
 	</array>
 	<key>MachServices</key>
 	<dict>
-		<key>com.whitemoon.keepgoing.helper</key>
+		<key>io.github.whitemoons.keepgoing.helper</key>
 		<true/>
 	</dict>
 </dict>
