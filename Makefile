@@ -25,9 +25,9 @@ app: build
 	cp Resources/AppIcon.icns "$(APP)/Contents/Resources/"
 	cp Resources/$(HELPER_ID).plist "$(APP)/Contents/Library/LaunchDaemons/"
 	cp "$(BIN)/KeepGoing" "$(BIN)/KeepGoingHelper" "$(APP)/Contents/MacOS/"
-	codesign --force --options runtime --sign "$(SIGN_ID)" \
+	codesign --force --options runtime --timestamp --sign "$(SIGN_ID)" \
 		--identifier $(HELPER_ID) "$(APP)/Contents/MacOS/KeepGoingHelper"
-	codesign --force --options runtime --sign "$(SIGN_ID)" "$(APP)"
+	codesign --force --options runtime --timestamp --sign "$(SIGN_ID)" "$(APP)"
 	codesign --verify --strict --deep "$(APP)"
 
 # Regenerates the committed artwork. Only needed after changing the icon shapes or
@@ -53,7 +53,7 @@ dmg: app $(DMGBUILD)
 	swift Scripts/make-alias/main.swift build/dmg/Applications
 	$(DMGBUILD) -s Scripts/dmg-settings.py -D app="$(APP)" \
 		-D applications=build/dmg/Applications "$(APP_NAME)" "$(DMG)"
-	codesign --force --sign "$(SIGN_ID)" "$(DMG)"
+	codesign --force --timestamp --sign "$(SIGN_ID)" "$(DMG)"
 
 # Needs SIGN_ID set to a Developer ID Application identity.
 notarize: dmg
