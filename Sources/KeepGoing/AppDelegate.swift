@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       startDemo()
       return
     }
+    if Installer.runsFromDiskImage, installAndRelaunch() { return }
     icon = StatusIcon(button: button)
     button.target = self
     button.action = #selector(statusItemClicked)
@@ -195,11 +196,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  // MARK: - Installation
+
+  /// Offers to copy the app into /Applications and start it from there. Returns true when
+  /// the installed copy takes over and this instance is about to quit.
+  private func installAndRelaunch() -> Bool {
+    let destination = Installer.destination
+    let replacing = FileManager.default.fileExists(atPath: destination.path)
+    let offer = NSAlert()
+    offer.messageText = "Keep Going을 응용 프로그램 폴더로 옮길까요?"
+    offer.informativeText =
+      replacing
+      ? "이미 설치된 Keep Going을 이 버전으로 교체한 뒤 바로 실행합니다."
+      : "응용 프로그램 폴더에 복사한 뒤 바로 실행합니다."
+    offer.addButton(withTitle: replacing ? "교체하고 실행" : "옮기고 실행")
+    offer.addButton(withTitle: "나중에")
+    NSApp.activate(ignoringOtherApps: true)
+    guard offer.runModal() == .alertFirstButtonReturn else { return false }
+
+    // An installed copy that is still running would keep using its old files.
+    let others = NSRunningApplication.runningApplications(
+      withBundleIdentifier: Bundle.main.bundleIdentifier ?? ""
+    ).filter { $0 != .current }
+    for other in others { other.terminate() }
+    let deadline = Date().addingTimeInterval(3)
+    while others.contains(where: { !$0.isTerminated }), Date() < deadline {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+
+    do {
+      try Installer.install(from: Bundle.main.bundleURL, to: destination)
+    } catch {
+      alert(
+        "응용 프로그램 폴더로 옮기지 못했습니다.",
+        detail: "Keep Going을 Applications 폴더로 직접 드래그해주세요.\n\(error.localizedDescription)")
+      return false
+    }
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.createsNewApplicationInstance = true
+    NSWorkspace.shared.openApplication(at: destination, configuration: configuration) {
+      _, error in
+      DispatchQueue.main.async {
+        if let error {
+          self.alert(
+            "설치했지만 실행하지 못했습니다.",
+            detail: "응용 프로그램 폴더에서 Keep Going을 직접 열어주세요.\n\(error.localizedDescription)")
+        }
+        NSApp.terminate(nil)
+      }
+    }
+    return true
+  }
+
   // MARK: - Helper registration
 
   private func ensureHelperReady() -> Bool {
-    let path = Bundle.main.bundlePath
-    if path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") {
+    if Installer.runsFromDiskImage {
       alert(
         "먼저 응용 프로그램 폴더로 옮겨주세요.",
         detail: "Keep Going을 Applications 폴더로 드래그한 뒤 거기에서 실행해야 합니다.")
